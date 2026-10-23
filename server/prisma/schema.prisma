@@ -1,0 +1,462 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  DESTINATION_MANAGER
+  DESTINATION_STAFF
+  SCHOOL_ADMIN
+  SCHOOL_STAFF
+}
+
+enum PortalType {
+  SCHOOL
+  DESTINATION
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum DestinationStatus {
+  DRAFT
+  PENDING_APPROVAL
+  PUBLISHED
+  PAUSED
+  ARCHIVED
+}
+
+enum TicketCategory {
+  STUDENT
+  TEACHER
+  ADULT
+  CHILD
+  SPECIAL_PACKAGE
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  LIMITED
+  PENDING_CONFIRMATION
+  FULLY_BOOKED
+  CLOSED
+  BLACKOUT
+}
+
+enum BookingStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  CHANGES_REQUESTED
+  AWAITING_SCHOOL_RESPONSE
+  ACCEPTED
+  AWAITING_CONFIRMATION
+  CONFIRMED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum TravellerStatus {
+  NEW
+  UNDER_REVIEW
+  MORE_INFO_REQUIRED
+  SOURCING_TRANSPORT
+  QUOTE_PREPARED
+  AWAITING_SCHOOL_APPROVAL
+  CONFIRMED
+  UNAVAILABLE
+  CANCELLED
+  COMPLETED
+}
+
+enum AcPreference {
+  AC
+  NON_AC
+  NO_PREFERENCE
+}
+
+model User {
+  id              String             @id @default(uuid())
+  email           String             @unique
+  neonAuthId      String?            @unique
+  firebaseUid     String?            @unique
+  passwordHash    String?
+  name            String
+  phone           String?
+  role            Role               @default(SCHOOL_STAFF)
+  portalType      PortalType?
+  isActive        Boolean            @default(true)
+  emailVerified   Boolean            @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  schoolStaff     SchoolStaff[]
+  destinationStaff DestinationStaff[]
+  bookingsCreated Booking[]          @relation("BookingsCreated")
+  statusChanges   BookingStatusHistory[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  assignedTravellerRequests TravellerServiceRequest[] @relation("AssignedAdmin")
+}
+
+model School {
+  id                  String             @id @default(uuid())
+  name                String
+  logo                String?
+  board               String?            // CBSE, ICSE, State Board, IB, Cambridge
+  schoolType          String?            // Public, Private, Day School, Boarding
+  address             String
+  city                String
+  state               String
+  pincode             String
+  officialEmail       String             @unique
+  contactPhone        String
+  contactPerson       String
+  designation         String?
+  approximateStrength Int?
+  website             String?
+  gstNumber           String?
+  verificationStatus  VerificationStatus @default(VERIFIED)
+  verificationNotes   String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  staff               SchoolStaff[]
+  bookings            Booking[]
+  travellerRequests   TravellerServiceRequest[]
+}
+
+model SchoolStaff {
+  id          String   @id @default(uuid())
+  schoolId    String
+  userId      String
+  role        String   @default("COORDINATOR") // ADMIN, COORDINATOR, TEACHER
+  designation String?
+  createdAt   DateTime @default(now())
+
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, userId])
+}
+
+model Destination {
+  id                  String             @id @default(uuid())
+  name                String
+  businessName        String
+  slug                String             @unique
+  logo                String?
+  coverImage          String?
+  category            String             // Waterpark, Amusement Park, Science Centre, Museum, Zoo, Heritage, etc.
+  description         String
+  address             String
+  city                String
+  state               String
+  pincode             String
+  latitude            Float?
+  longitude           Float?
+  officialEmail       String             @unique
+  contactPhone        String
+  managerName         String
+  googleProfile       String?
+  website             String?
+  status              DestinationStatus  @default(PUBLISHED)
+  isVerified          Boolean            @default(true)
+  guideAvailable      Boolean            @default(false)
+  bookingLeadDays     Int                @default(2)
+  minGroupSize        Int                @default(20)
+  maxGroupSize        Int                @default(1500)
+  openingTime         String             @default("09:30")
+  closingTime         String             @default("18:00")
+  weeklyOperatingDays String             @default("Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday")
+  safetyInfo          String?
+  accessibilityInfo   String?
+  schoolPolicies      String?
+  cancellationPolicy  String?
+  refundPolicy        String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  staff               DestinationStaff[]
+  images              DestinationImage[]
+  facilities          DestinationFacility[]
+  ticketTypes         TicketType[]
+  availabilities      DestinationAvailability[]
+  operatingHours      DestinationOperatingHours[]
+  bookings            Booking[]
+  travellerRequests   TravellerServiceRequest[]
+}
+
+model DestinationStaff {
+  id            String      @id @default(uuid())
+  destinationId String
+  userId        String
+  role          String      @default("MANAGER") // MANAGER, COORDINATOR, STAFF
+  createdAt     DateTime    @default(now())
+
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([destinationId, userId])
+}
+
+model DestinationImage {
+  id            String      @id @default(uuid())
+  destinationId String
+  url           String
+  publicId      String?
+  caption       String?
+  isCover       Boolean     @default(false)
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+}
+
+model DestinationFacility {
+  id                String            @id @default(uuid())
+  destinationId     String
+  name              String
+  category          String            @default("GENERAL") // MEALS, ACTIVITIES, LOCKERS, GUIDED_TOURS, PARKING, SAFETY
+  description       String?
+  isIncluded        Boolean           @default(false)
+  extraPrice        Float             @default(0)
+  availableCapacity Int?
+  createdAt         DateTime          @default(now())
+
+  destination       Destination       @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  bookingFacilities BookingFacility[]
+}
+
+model TicketType {
+  id                      String         @id @default(uuid())
+  destinationId           String
+  name                    String
+  category                TicketCategory @default(STUDENT)
+  description             String?
+  basePrice               Float
+  weekdayPrice            Float?
+  weekendPrice            Float?
+  complimentaryStaffRatio Int            @default(15) // 1 free staff per 15 students
+  minQuantity             Int            @default(1)
+  maxQuantity             Int            @default(2000)
+  isActive                Boolean        @default(true)
+  createdAt               DateTime       @default(now())
+
+  destination             Destination    @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  bookingPriceItems       BookingPriceItem[]
+}
+
+model DestinationOperatingHours {
+  id            String      @id @default(uuid())
+  destinationId String
+  dayOfWeek     Int         // 0 = Sunday, 1 = Monday, ... 6 = Saturday
+  isOpen        Boolean     @default(true)
+  openTime      String      @default("09:30")
+  closeTime     String      @default("18:00")
+
+  destination   Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+  @@unique([destinationId, dayOfWeek])
+}
+
+model DestinationAvailability {
+  id            String             @id @default(uuid())
+  destinationId String
+  date          DateTime           @db.Date
+  status        AvailabilityStatus @default(AVAILABLE)
+  dailyCapacity Int                @default(800)
+  bookedCount   Int                @default(0)
+  notes         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  destination   Destination        @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+  @@unique([destinationId, date])
+}
+
+model Booking {
+  id                    String                @id @default(uuid())
+  bookingReference      String                @unique
+  schoolId              String
+  destinationId         String
+  createdById           String
+  visitDate             DateTime              @db.Date
+  arrivalTime           String                @default("10:00")
+  departureTime         String                @default("16:30")
+  studentCount          Int
+  teacherCount          Int
+  staffCount            Int                   @default(0)
+  totalGroupSize        Int
+  tripPurpose           String?
+  ageGroups             String?               // e.g. "Grades 6-8, 11-14 yrs"
+  specialRequirements   String?
+  dietaryNeeds          String?
+  accessibilityRequirements String?
+  schoolNotes           String?
+  status                BookingStatus         @default(SUBMITTED)
+  requiresTransport     Boolean               @default(false)
+  rejectionReason       String?
+  destinationNotes      String?
+  originalQuoteAmount   Float
+  confirmedQuoteAmount  Float?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  school                School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  destination           Destination           @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  createdBy             User                  @relation("BookingsCreated", fields: [createdById], references: [id])
+  facilities            BookingFacility[]
+  priceItems            BookingPriceItem[]
+  quoteVersions         BookingQuoteVersion[]
+  changeRequests        BookingChangeRequest[]
+  statusHistory         BookingStatusHistory[]
+  travellerRequest      TravellerServiceRequest?
+}
+
+model BookingFacility {
+  id          String              @id @default(uuid())
+  bookingId   String
+  facilityId  String
+  quantity    Int                 @default(1)
+  unitPrice   Float
+  totalPrice  Float
+
+  booking     Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  facility    DestinationFacility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+}
+
+model BookingPriceItem {
+  id           String      @id @default(uuid())
+  bookingId    String
+  ticketTypeId String?
+  description  String
+  category     String
+  unitPrice    Float
+  quantity     Int
+  totalPrice   Float
+
+  booking      Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  ticketType   TicketType? @relation(fields: [ticketTypeId], references: [id], onDelete: SetNull)
+}
+
+model BookingQuoteVersion {
+  id             String   @id @default(uuid())
+  bookingId      String
+  versionNumber  Int      @default(1)
+  studentTotal   Float
+  staffTotal     Float
+  addOnsTotal    Float    @default(0)
+  taxAmount      Float    @default(0)
+  discountAmount Float    @default(0)
+  grandTotal     Float
+  quoteNotes     String?
+  isAccepted     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  booking        Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+}
+
+model BookingChangeRequest {
+  id                   String    @id @default(uuid())
+  bookingId            String
+  requestedByRole      String    // DESTINATION or SCHOOL
+  proposedDate         DateTime? @db.Date
+  proposedStudentCount Int?
+  proposedTeacherCount Int?
+  proposedFacilities   String?   // JSON representation or summary
+  proposedQuote        Float?
+  reason               String
+  status               String    @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  createdAt            DateTime  @default(now())
+  resolvedAt           DateTime?
+
+  booking              Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+}
+
+model BookingStatusHistory {
+  id              String        @id @default(uuid())
+  bookingId       String
+  fromStatus      BookingStatus?
+  toStatus        BookingStatus
+  changedByUserId String
+  reason          String?
+  createdAt       DateTime      @default(now())
+
+  booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  changedBy       User          @relation(fields: [changedByUserId], references: [id], onDelete: Cascade)
+}
+
+model TravellerServiceRequest {
+  id                 String          @id @default(uuid())
+  bookingId          String          @unique
+  schoolId           String
+  destinationId      String
+  pickupAddress      String
+  pickupCity         String
+  pickupTime         String          @default("08:00")
+  returnJourney      Boolean         @default(true)
+  passengerCount     Int
+  preferredVehicle   String          // AC Bus (45-seater), Traveller (18-seater), 3x Buses, etc.
+  numberOfVehicles   Int             @default(1)
+  acPreference       AcPreference    @default(AC)
+  accessibilityNeeds String?
+  specialInstructions String?
+  status             TravellerStatus @default(NEW)
+  assignedAdminId    String?
+  vehicleDetails     String?         // Vehicle reg, operator name, driver contact
+  quoteAmount        Float?          // Admin estimated or final quote
+  adminNotes         String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  booking            Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  school             School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  destination        Destination     @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  assignedAdmin      User?           @relation("AssignedAdmin", fields: [assignedAdminId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   @default("INFO") // INFO, BOOKING, TRANSPORT, ALERT
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String   // e.g. "DESTINATION_ONBOARDED", "BOOKING_CREATED", "TRAVELLER_QUOTE_ISSUED"
+  entityType String   // "Booking", "Destination", "TravellerRequest", "Pricing"
+  entityId   String?
+  details    String?  // JSON or summary description
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model PlatformSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}
