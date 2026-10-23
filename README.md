@@ -1,4 +1,4 @@
-# SCHOOLDEST — B2B School Destination Booking Platform
+# TRAILR'S — B2B School Destination Booking Platform
 
 **SCHOOLDEST** is an enterprise-grade B2B destination booking platform connecting schools directly with amusement parks, waterparks, science centres, planetariums, zoos, and educational attractions across India (such as *Hardy's World Ludhiana*, *Pushpa Gujral Science City Kapurthala*, and *Wonderla*).
 
