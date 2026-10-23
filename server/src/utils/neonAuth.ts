@@ -133,25 +133,36 @@ export async function verifyNeonAuthToken(token: string): Promise<VerifiedNeonUs
     }
   }
 
-  // 3. Fallback: Query Neon Auth Session endpoint (/api/auth/get-session)
+  // 3. Fallback: Query Neon Auth Session endpoint (/get-session or /api/auth/get-session)
   try {
-    const sessionRes = await fetch(`${neonAuthUrl.replace(/\/$/, '')}/api/auth/get-session`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Cookie: `better-auth.session_token=${token}`,
-      },
-    });
+    const cleanUrl = neonAuthUrl.replace(/\/$/, '');
+    const candidateEndpoints = cleanUrl.endsWith('/auth')
+      ? [`${cleanUrl}/get-session`, `${cleanUrl}/api/auth/get-session`]
+      : [`${cleanUrl}/api/auth/get-session`, `${cleanUrl}/get-session`];
 
-    if (sessionRes.ok) {
-      const data = (await sessionRes.json()) as any;
-      if (data?.user?.id) {
-        return {
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name,
-          emailVerified: data.user.emailVerified,
-        };
+    for (const sessionUrl of candidateEndpoints) {
+      try {
+        const sessionRes = await fetch(sessionUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Cookie: `better-auth.session_token=${token}`,
+          },
+        });
+
+        if (sessionRes.ok) {
+          const data = (await sessionRes.json()) as any;
+          if (data?.user?.id) {
+            return {
+              id: data.user.id,
+              email: data.user.email,
+              name: data.user.name,
+              emailVerified: data.user.emailVerified,
+            };
+          }
+        }
+      } catch (err) {
+        // try next candidate
       }
     }
   } catch (fetchErr: any) {
