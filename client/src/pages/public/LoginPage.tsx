@@ -51,9 +51,69 @@ export const LoginPage: React.FC = () => {
   const searchParams = new URLSearchParams(location.search);
   const intent = searchParams.get('intent') || searchParams.get('portal');
   const notice = searchParams.get('notice');
+  const emailParam = searchParams.get('email');
+
+  const [showReloginModal, setShowReloginModal] = useState<boolean>(
+    notice === 'relogin_super_admin' || notice === 'super_admin_activated'
+  );
 
   return (
-    <div className="min-h-[calc(100vh-72px)] bg-aurora flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 selection:bg-blue-600 selection:text-white">
+    <div className="min-h-[calc(100vh-72px)] bg-aurora flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 selection:bg-blue-600 selection:text-white relative">
+      {/* Re-login Modal Popup */}
+      {showReloginModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 max-w-md w-full shadow-2xl text-center space-y-5">
+            <div className="w-16 h-16 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto shadow-inner">
+              <ShieldCheck className="w-9 h-9" />
+            </div>
+            <div className="space-y-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 uppercase tracking-wide">
+                Session Refresh Required
+              </span>
+              <h2 className="text-xl font-black text-slate-900 font-display">
+                Re-login with Google
+              </h2>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Your account {emailParam ? <strong>{emailParam}</strong> : 'email'} has been granted Super Administrator privileges!
+              </p>
+              <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 text-xs text-purple-950 text-left font-medium">
+                Please click below to sign back in with your Google account. Your new session will immediately unlock the Super Admin Command Centre.
+              </div>
+            </div>
+
+            <div className="space-y-2.5 pt-2">
+              <button
+                onClick={() => {
+                  setShowReloginModal(false);
+                  handleGoogleSignIn();
+                }}
+                disabled={googleLoading}
+                className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-purple-600/30 transition-all active:scale-[0.98]"
+              >
+                {googleLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path fill="#ffffff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#ffffff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#ffffff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                    <path fill="#ffffff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                  </svg>
+                )}
+                <span>Sign In with Google ({emailParam || 'Account'})</span>
+              </button>
+
+              <button
+                onClick={() => setShowReloginModal(false)}
+                className="w-full py-2 px-3 text-xs text-slate-500 hover:text-slate-800 font-semibold"
+              >
+                Dismiss & Continue to Normal Login
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-md w-full space-y-7">
         {/* Header */}
         <div className="text-center space-y-3">
@@ -70,13 +130,13 @@ export const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        {notice === 'super_admin_activated' && (
+        {(notice === 'super_admin_activated' || notice === 'relogin_super_admin') && (
           <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-[14px] flex items-start gap-3 shadow-sm animate-fadeIn">
             <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
             <div className="flex-1">
               <span className="font-bold block text-emerald-900">Super Admin Privileges Activated</span>
               <span className="text-emerald-800 text-xs">
-                Your Google email has been granted Super Administrator access. Please sign in with Google below to enter the Global Command Centre.
+                Your Google email {emailParam ? <strong>({emailParam})</strong> : ''} has been granted Super Administrator access. Please sign in with Google below to enter the Global Command Centre.
               </span>
             </div>
           </div>

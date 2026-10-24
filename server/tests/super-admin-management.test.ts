@@ -405,7 +405,7 @@ describe('Super Admin Management System & Security Regression Suite', () => {
       let caughtError: any = null;
       const mockReq: any = {
         params: { id: 'some-target-id' },
-        user: { userId: 'different-actor-id', email: 'actor@admin.com' },
+        user: { userId: 'different-actor-id', email: primarySuperAdmin.email },
         body: {},
       };
       const mockRes: any = {

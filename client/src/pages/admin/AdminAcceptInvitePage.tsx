@@ -15,6 +15,8 @@ import {
   LogOut,
   Sparkles,
   Lock,
+  Mail,
+  RefreshCw,
 } from 'lucide-react';
 
 export const AdminAcceptInvitePage: React.FC = () => {
@@ -29,6 +31,11 @@ export const AdminAcceptInvitePage: React.FC = () => {
   const [accepting, setAccepting] = useState(false);
   const [acceptSuccess, setAcceptSuccess] = useState(false);
 
+  // Popups & Countdown States
+  const [showEmailPrompt, setShowEmailPrompt] = useState(false);
+  const [countdown, setCountdown] = useState<number>(10);
+  const [countdownActive, setCountdownActive] = useState<boolean>(false);
+
   useEffect(() => {
     if (!token) {
       setError('Missing invitation token in the URL.');
@@ -40,7 +47,13 @@ export const AdminAcceptInvitePage: React.FC = () => {
       .then((res) => {
         if (res.success && res.data) {
           setInvitationData(res.data);
-          if (!res.data.isValid) {
+          if (res.data.status === 'PENDING') {
+            setShowEmailPrompt(true);
+          } else if (res.data.status === 'ACCEPTED' || res.data.isAccepted) {
+            // Already accepted invitation
+            setAcceptSuccess(true);
+            setCountdownActive(true);
+          } else {
             setError(res.data.message || 'This invitation is no longer active.');
           }
         }
@@ -51,6 +64,33 @@ export const AdminAcceptInvitePage: React.FC = () => {
       })
       .finally(() => setLoading(false));
   }, [token]);
+
+  // Handle 10-second countdown to auto logout
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (countdownActive && countdown > 0) {
+      timer = setTimeout(() => {
+        setCountdown((prev) => prev - 1);
+      }, 1000);
+    } else if (countdownActive && countdown === 0) {
+      handleAutoLogout();
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [countdownActive, countdown]);
+
+  const handleAutoLogout = async () => {
+    setCountdownActive(false);
+    const targetEmail = invitationData?.email || user?.email || '';
+    try {
+      await logout();
+    } catch (e) {
+      console.warn('Logout error during auto logout:', e);
+    } finally {
+      navigate(`/login?notice=relogin_super_admin&email=${encodeURIComponent(targetEmail)}`, { replace: true });
+    }
+  };
 
   const handleAccept = async () => {
     if (!token) return;
@@ -63,6 +103,8 @@ export const AdminAcceptInvitePage: React.FC = () => {
         localStorage.setItem('schooldest_token', res.data.token);
         await refreshUser();
         setAcceptSuccess(true);
+        setCountdown(10);
+        setCountdownActive(true);
       }
     } catch (err: any) {
       console.error('Accept invitation error:', err);
@@ -76,6 +118,7 @@ export const AdminAcceptInvitePage: React.FC = () => {
       if (token) {
         sessionStorage.setItem('schooldest_redirect_url', `/admin/accept-invite?token=${token}`);
       }
+      setShowEmailPrompt(false);
       await loginWithGoogle();
     } catch (err: any) {
       setError(err.message || 'Google sign-in failed.');
@@ -95,9 +138,80 @@ export const AdminAcceptInvitePage: React.FC = () => {
   }
 
   const isEmailMatching = user && invitationData && user.email.toLowerCase().trim() === invitationData.email.toLowerCase().trim();
+  const isAcceptedStatus = invitationData?.status === 'ACCEPTED' || invitationData?.isAccepted;
 
   return (
-    <div className="min-h-screen bg-aurora flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 selection:bg-purple-600 selection:text-white">
+    <div className="min-h-screen bg-aurora flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 selection:bg-purple-600 selection:text-white relative">
+      {/* Modal 1: "Use This Same Email" Popup on Open */}
+      {showEmailPrompt && invitationData && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 max-w-md w-full shadow-2xl text-center space-y-5">
+            <div className="w-14 h-14 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto shadow-inner">
+              <Mail className="w-7 h-7" />
+            </div>
+            <div className="space-y-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 uppercase tracking-wide">
+                Account Verification Required
+              </span>
+              <h3 className="text-xl font-black text-slate-900 font-display">
+                Use This Same Email
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                This Super Administrator invitation was specifically issued to:
+              </p>
+              <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 font-mono font-bold text-purple-900 text-sm select-all">
+                {invitationData.email}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                Please continue with this exact Google account. After identity verification, you will be automatically logged out and asked to re-login to enter the Super Admin Command Centre.
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              {!user ? (
+                <button
+                  onClick={handleSignInToAccept}
+                  className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-purple-600/30 transition-all active:scale-[0.98]"
+                >
+                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                    <path fill="#ffffff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#ffffff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#ffffff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                    <path fill="#ffffff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                  </svg>
+                  <span>Continue with Google ({invitationData.email})</span>
+                </button>
+              ) : isEmailMatching ? (
+                <button
+                  onClick={() => {
+                    setShowEmailPrompt(false);
+                    handleAccept();
+                  }}
+                  className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-purple-600/30 transition-all active:scale-[0.98]"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Claim Super Admin Access Now</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleSignInToAccept}
+                  className="w-full py-3.5 px-5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors"
+                >
+                  <span>Switch Account to {invitationData.email}</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => setShowEmailPrompt(false)}
+                className="w-full py-2 text-xs text-slate-500 hover:text-slate-800 font-semibold"
+              >
+                Close & View Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-md w-full space-y-6">
         {/* Header Badge */}
         <div className="text-center space-y-2">
@@ -112,7 +226,7 @@ export const AdminAcceptInvitePage: React.FC = () => {
 
         {/* Main Card */}
         <div className="glass-card p-8 rounded-3xl shadow-xl shadow-slate-200/50 space-y-6 bg-white border border-slate-200/80">
-          {error && !invitationData?.isValid ? (
+          {error && !invitationData?.isValid && !isAcceptedStatus ? (
             <div className="text-center space-y-4">
               <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
                 <ShieldAlert className="w-7 h-7" />
@@ -130,7 +244,7 @@ export const AdminAcceptInvitePage: React.FC = () => {
                 <span>Return to Sign In</span>
               </Link>
             </div>
-          ) : acceptSuccess ? (
+          ) : acceptSuccess || isAcceptedStatus ? (
             <div className="text-center space-y-5 py-3 animate-fadeIn">
               <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
                 <CheckCircle2 className="w-9 h-9 text-emerald-600" />
@@ -144,24 +258,34 @@ export const AdminAcceptInvitePage: React.FC = () => {
                     Important Account Activation Step:
                   </p>
                   <p className="leading-relaxed">
-                    Your Google account (<strong>{user?.email || invitationData?.email}</strong>) is now an authorized Super Administrator.
+                    Your Google account (<strong>{user?.email || invitationData?.email}</strong>) is now authorized as a top-level Super Administrator.
                   </p>
-                  <p className="leading-relaxed bg-white/90 p-3 rounded-xl border border-purple-200/80 font-bold text-purple-900 shadow-xs">
-                    Please sign out and sign back in with your Google account ({user?.email || invitationData?.email}) to refresh your session and access the Super Admin Command Centre.
-                  </p>
+                  
+                  {/* Countdown Notice Box */}
+                  <div className="bg-white/95 p-3.5 rounded-xl border border-purple-300 shadow-xs space-y-2">
+                    <div className="flex items-center justify-between text-xs font-bold text-purple-900">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-purple-600 animate-spin" />
+                        <span>Auto sign-out in progress...</span>
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-purple-600 text-white font-mono font-black text-xs">
+                        {countdown}s
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      You will be automatically signed out in <strong>{countdown} seconds</strong>. Then, simply re-login with your Google account to enter the Command Centre with full Super Admin privileges.
+                    </p>
+                  </div>
                 </div>
               </div>
 
               <div className="space-y-2.5 pt-2">
                 <button
-                  onClick={async () => {
-                    await logout();
-                    navigate('/login?notice=super_admin_activated', { replace: true });
-                  }}
+                  onClick={handleAutoLogout}
                   className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 transition-all active:scale-[0.98]"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span>Sign Out & Re-login with Google</span>
+                  <span>Sign Out Now & Re-login with Google</span>
                 </button>
 
                 <button
@@ -227,7 +351,7 @@ export const AdminAcceptInvitePage: React.FC = () => {
                       <path fill="#ffffff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                       <path fill="#ffffff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
                     </svg>
-                    <span>Sign in with Google to Claim</span>
+                    <span>Sign in with Google ({invitationData?.email})</span>
                   </button>
                   <p className="text-[11px] text-slate-400 text-center">
                     Must sign in with <span className="font-semibold text-slate-600">{invitationData?.email}</span>

@@ -81,6 +81,27 @@ async function resolveOrCreateNeonUser(verified: {
       return user!;
     }
 
+    // If an accepted invitation exists for this user, restore SUPER_ADMIN role
+    const acceptedInvitation = await prisma.superAdminInvitation.findFirst({
+      where: {
+        email: { equals: normalizedEmail, mode: 'insensitive' },
+        status: SuperAdminInvitationStatus.ACCEPTED,
+        acceptedById: user.id,
+      },
+    });
+    if (acceptedInvitation && user.role !== Role.SUPER_ADMIN) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          role: Role.SUPER_ADMIN,
+          lastLoginAt: new Date(),
+          name: verified.name && (!user.name || user.name === 'Neon User' || user.name === 'Google User') ? verified.name : user.name,
+        },
+        include: userStaffInclude,
+      });
+      return user;
+    }
+
     // Security Check: If Super Admin, enforce email matching with authorized record
     if (user.role === Role.SUPER_ADMIN && user.email.toLowerCase().trim() !== normalizedEmail) {
       throw new AppError('Super Admin identity mismatch. Authorized email does not match authenticated token.', 403);
@@ -139,6 +160,29 @@ async function resolveOrCreateNeonUser(verified: {
         }
       });
       if (acceptedUser) return acceptedUser;
+    }
+
+    // If an accepted invitation exists for this existing email, restore SUPER_ADMIN role
+    const acceptedInvByEmail = await prisma.superAdminInvitation.findFirst({
+      where: {
+        email: { equals: normalizedEmail, mode: 'insensitive' },
+        status: SuperAdminInvitationStatus.ACCEPTED,
+        acceptedById: existingByEmail.id,
+      },
+    });
+    if (acceptedInvByEmail && existingByEmail.role !== Role.SUPER_ADMIN) {
+      return await prisma.user.update({
+        where: { id: existingByEmail.id },
+        data: {
+          role: Role.SUPER_ADMIN,
+          neonAuthId: verified.id,
+          email: normalizedEmail,
+          emailVerified: true,
+          lastLoginAt: new Date(),
+          name: existingByEmail.name || verified.name,
+        },
+        include: userStaffInclude,
+      });
     }
 
     // SECURITY INVARIANT 1: SUPER_ADMIN MUST NEVER be linked implicitly via email match without a valid invitation.
@@ -1071,16 +1115,23 @@ export async function validateSuperAdminInvitation(req: Request, res: Response, 
     }
 
     const isPending = invitation.status === SuperAdminInvitationStatus.PENDING;
+    const isAccepted = invitation.status === SuperAdminInvitationStatus.ACCEPTED;
 
     res.json({
       success: true,
       data: {
         isValid: isPending,
+        isAccepted,
         status: invitation.status,
         email: invitation.email,
         notes: invitation.notes,
         expiresAt: invitation.expiresAt,
         invitedBy: invitation.invitedBy?.name || invitation.invitedBy?.email || 'Platform Owner',
+        message: isAccepted
+          ? 'This Super Administrator invitation has already been accepted and activated.'
+          : !isPending
+          ? 'This invitation is no longer active.'
+          : null,
       },
     });
   } catch (err) {
