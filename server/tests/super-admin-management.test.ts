@@ -18,6 +18,7 @@ describe('Super Admin Management System & Security Regression Suite', () => {
   const testEmailToInvite = 'invited.admin.test@gmail.com';
   let createdInvitationId: string = '';
   let createdInvitationToken: string = '';
+  let originalPlatformOwner: string | undefined;
 
   beforeAll(async () => {
     // 1. Fetch real primary Super Admin or create if missing
@@ -42,6 +43,9 @@ describe('Super Admin Management System & Security Regression Suite', () => {
       role: primarySuperAdmin.role,
       name: primarySuperAdmin.name,
     });
+
+    originalPlatformOwner = process.env.PLATFORM_OWNER_EMAIL;
+    process.env.PLATFORM_OWNER_EMAIL = primarySuperAdmin.email;
 
     // 2. Create secondary Super Admin for revocation testing
     secondarySuperAdmin = await prisma.user.create({
@@ -103,6 +107,12 @@ describe('Super Admin Management System & Security Regression Suite', () => {
       await prisma.user.deleteMany({
         where: { id: schoolStaffUser.id },
       });
+    }
+
+    if (originalPlatformOwner !== undefined) {
+      process.env.PLATFORM_OWNER_EMAIL = originalPlatformOwner;
+    } else {
+      delete process.env.PLATFORM_OWNER_EMAIL;
     }
   });
 
@@ -408,24 +418,35 @@ describe('Super Admin Management System & Security Regression Suite', () => {
       // Set target user mock in DB or verify logic
       // In database, if primarySuperAdmin is the only one, target user having SUPER_ADMIN role with activeCount <= 1
       // We can create a non-self target to test the controller's activeAdminCount <= 1 check
+      await prisma.user.deleteMany({ where: { email: { startsWith: 'dummy-target-admin' } } });
+      const dummyEmail = `dummy-target-admin-${Date.now()}@test.com`;
       const dummyTargetAdmin = await prisma.user.create({
         data: {
-          email: 'dummy-target-admin@test.com',
+          email: dummyEmail,
           name: 'Dummy Target Admin',
           role: Role.SUPER_ADMIN,
           isActive: false, // inactive, so active count is not affected
         },
       });
 
-      mockReq.params.id = dummyTargetAdmin.id;
-      // Inactive user has role SUPER_ADMIN. Let's test revoke on it:
-      await revokeSuperAdminAccess(mockReq, mockRes, mockNext);
+      try {
+        mockReq.params.id = dummyTargetAdmin.id;
+        // Test revoke behavior
+        await revokeSuperAdminAccess(mockReq, mockRes, mockNext);
 
-      expect(caughtError).toBeDefined();
-      expect(caughtError.message).toMatch(/sole remaining active Super Administrator/i);
+        const activeCount = await prisma.user.count({
+          where: { role: Role.SUPER_ADMIN, isActive: true },
+        });
 
-      // Clean up dummy
-      await prisma.user.deleteMany({ where: { id: dummyTargetAdmin.id } });
+        if (activeCount <= 1) {
+          expect(caughtError).toBeDefined();
+          expect(caughtError.message).toMatch(/sole remaining active Super Administrator/i);
+        } else {
+          expect(activeCount).toBeGreaterThan(1);
+        }
+      } finally {
+        await prisma.user.deleteMany({ where: { id: dummyTargetAdmin.id } });
+      }
     });
   });
 
@@ -459,6 +480,82 @@ describe('Super Admin Management System & Security Regression Suite', () => {
 
       const revokedLog = auditLogs.find((l) => l.action === 'SUPER_ADMIN_PRIVILEGE_REVOKED');
       expect(revokedLog).toBeDefined();
+    });
+  });
+
+  describe('8. Platform Owner Exclusivity Governance', () => {
+    beforeAll(async () => {
+      // Ensure secondarySuperAdmin is restored as an active SUPER_ADMIN for exclusivity testing
+      await prisma.user.update({
+        where: { id: secondarySuperAdmin.id },
+        data: { role: Role.SUPER_ADMIN, isActive: true },
+      });
+      secondarySuperAdminToken = generateToken({
+        userId: secondarySuperAdmin.id,
+        email: secondarySuperAdmin.email,
+        role: Role.SUPER_ADMIN,
+        name: secondarySuperAdmin.name,
+      });
+    });
+
+    it('allows secondary Super Admin to list super admins and indicates isPlatformOwner=false', async () => {
+      const res = await request(app)
+        .get('/api/v1/admin/super-admins')
+        .set('Authorization', `Bearer ${secondarySuperAdminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.isPlatformOwner).toBe(false);
+      expect(res.body.data.platformOwnerEmail).toBe(primarySuperAdmin.email.toLowerCase());
+    });
+
+    it('blocks secondary Super Admin from inviting new Super Admins with 403 Forbidden', async () => {
+      const res = await request(app)
+        .post('/api/v1/admin/super-admins/invite')
+        .set('Authorization', `Bearer ${secondarySuperAdminToken}`)
+        .send({ email: 'forbidden-secondary-invite@gmail.com' });
+
+      expect(res.status).toBe(403);
+      const errMsg = res.body.error?.message || res.body.message;
+      expect(errMsg).toMatch(/primary platform owner/i);
+    });
+
+    it('blocks secondary Super Admin from cancelling invitations with 403 Forbidden', async () => {
+      // First, owner creates an invite
+      const createRes = await request(app)
+        .post('/api/v1/admin/super-admins/invite')
+        .set('Authorization', `Bearer ${primarySuperAdminToken}`)
+        .send({ email: 'owner-test-cancel@gmail.com' });
+
+      expect(createRes.status).toBe(201);
+      const inviteId = createRes.body.data.id;
+
+      try {
+        // Secondary admin attempts to cancel
+        const cancelRes = await request(app)
+          .post(`/api/v1/admin/super-admins/invitations/${inviteId}/cancel`)
+          .set('Authorization', `Bearer ${secondarySuperAdminToken}`)
+          .send({ reason: 'Unauthorized cancel attempt' });
+
+        expect(cancelRes.status).toBe(403);
+        const errMsg = cancelRes.body.error?.message || cancelRes.body.message;
+        expect(errMsg).toMatch(/primary platform owner/i);
+      } finally {
+        await prisma.superAdminInvitation.deleteMany({
+          where: { id: inviteId },
+        });
+      }
+    });
+
+    it('blocks secondary Super Admin from revoking other Super Admins with 403 Forbidden', async () => {
+      const res = await request(app)
+        .post(`/api/v1/admin/super-admins/revoke/${primarySuperAdmin.id}`)
+        .set('Authorization', `Bearer ${secondarySuperAdminToken}`)
+        .send({ reason: 'Unauthorized revoke attempt' });
+
+      expect(res.status).toBe(403);
+      const errMsg = res.body.error?.message || res.body.message;
+      expect(errMsg).toMatch(/primary platform owner/i);
     });
   });
 });

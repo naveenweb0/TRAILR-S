@@ -874,11 +874,17 @@ export async function listSuperAdminsAndInvitations(req: AuthRequest, res: Respo
       }),
     ]);
 
+    const platformOwner = (process.env.PLATFORM_OWNER_EMAIL || 'naveen.maan2006@gmail.com').toLowerCase().trim();
+    const requesterEmail = (req.user?.email || '').toLowerCase().trim();
+    const isOwner = requesterEmail === platformOwner;
+
     res.json({
       success: true,
       data: {
         superAdmins,
         invitations,
+        isPlatformOwner: isOwner,
+        platformOwnerEmail: platformOwner,
       },
     });
   } catch (err) {
@@ -892,6 +898,16 @@ export async function listSuperAdminsAndInvitations(req: AuthRequest, res: Respo
  */
 export async function inviteSuperAdmin(req: AuthRequest, res: Response, next: NextFunction) {
   try {
+    const platformOwner = (process.env.PLATFORM_OWNER_EMAIL || 'naveen.maan2006@gmail.com').toLowerCase().trim();
+    const requesterEmail = (req.user?.email || '').toLowerCase().trim();
+
+    if (requesterEmail !== platformOwner) {
+      throw new AppError(
+        `Restricted operation: Only the primary platform owner (${platformOwner}) has authorization to invite new Super Administrators.`,
+        403
+      );
+    }
+
     const { email, notes } = req.body;
     if (!email || typeof email !== 'string') {
       throw new AppError('A valid Google email address is required.', 400);
@@ -974,6 +990,16 @@ export async function inviteSuperAdmin(req: AuthRequest, res: Response, next: Ne
  */
 export async function cancelSuperAdminInvitation(req: AuthRequest, res: Response, next: NextFunction) {
   try {
+    const platformOwner = (process.env.PLATFORM_OWNER_EMAIL || 'naveen.maan2006@gmail.com').toLowerCase().trim();
+    const requesterEmail = (req.user?.email || '').toLowerCase().trim();
+
+    if (requesterEmail !== platformOwner) {
+      throw new AppError(
+        `Restricted operation: Only the primary platform owner (${platformOwner}) has authorization to cancel invitations.`,
+        403
+      );
+    }
+
     const id = req.params.id as string;
     const invitation = await prisma.superAdminInvitation.findUnique({
       where: { id },
@@ -1020,6 +1046,16 @@ export async function cancelSuperAdminInvitation(req: AuthRequest, res: Response
  */
 export async function revokeSuperAdminAccess(req: AuthRequest, res: Response, next: NextFunction) {
   try {
+    const platformOwner = (process.env.PLATFORM_OWNER_EMAIL || 'naveen.maan2006@gmail.com').toLowerCase().trim();
+    const requesterEmail = (req.user?.email || '').toLowerCase().trim();
+
+    if (requesterEmail !== platformOwner) {
+      throw new AppError(
+        `Restricted operation: Only the primary platform owner (${platformOwner}) has authorization to revoke administrator privileges.`,
+        403
+      );
+    }
+
     const targetUserId = req.params.id as string;
 
     if (req.user!.userId === targetUserId) {

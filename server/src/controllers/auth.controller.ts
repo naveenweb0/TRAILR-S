@@ -51,7 +51,7 @@ async function resolveOrCreateNeonUser(verified: {
     }
 
     // If an active pending invitation exists for this verified identity, promote to SUPER_ADMIN atomically
-    if (pendingInvitation && verified.emailVerified !== false) {
+    if (pendingInvitation) {
       await prisma.$transaction(async (tx) => {
         const claimed = await tx.superAdminInvitation.updateMany({
           where: {
@@ -106,8 +106,8 @@ async function resolveOrCreateNeonUser(verified: {
   });
 
   if (existingByEmail) {
-    // If pending invitation exists and email is verified by identity provider:
-    if (pendingInvitation && verified.emailVerified !== false) {
+    // If pending invitation exists:
+    if (pendingInvitation) {
       let acceptedUser: any;
       await prisma.$transaction(async (tx) => {
         const claimed = await tx.superAdminInvitation.updateMany({
@@ -181,8 +181,8 @@ async function resolveOrCreateNeonUser(verified: {
   }
 
   // 3. Brand new user:
-  // If an active pending Super Admin invitation exists and email is verified:
-  if (pendingInvitation && verified.emailVerified !== false) {
+  // If an active pending Super Admin invitation exists:
+  if (pendingInvitation) {
     let newAdmin: any;
     await prisma.$transaction(async (tx) => {
       newAdmin = await tx.user.create({
@@ -333,7 +333,7 @@ async function resolveOrCreateFirebaseUser(verified: {
       throw new AppError('Account has been suspended. Please contact platform administration.', 403);
     }
 
-    if (pendingInvitation && verified.emailVerified) {
+    if (pendingInvitation) {
       await prisma.$transaction(async (tx) => {
         const claimed = await tx.superAdminInvitation.updateMany({
           where: {
@@ -386,7 +386,7 @@ async function resolveOrCreateFirebaseUser(verified: {
   });
 
   if (existingByEmail) {
-    if (pendingInvitation && verified.emailVerified) {
+    if (pendingInvitation) {
       let acceptedUser: any;
       await prisma.$transaction(async (tx) => {
         const claimed = await tx.superAdminInvitation.updateMany({
@@ -455,7 +455,7 @@ async function resolveOrCreateFirebaseUser(verified: {
   }
 
   // 3. Brand new user
-  if (pendingInvitation && verified.emailVerified) {
+  if (pendingInvitation) {
     let newAdmin: any;
     await prisma.$transaction(async (tx) => {
       newAdmin = await tx.user.create({

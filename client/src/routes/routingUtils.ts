@@ -12,6 +12,11 @@ export function getPostLoginRedirect(user: User | null, storedRedirect?: string 
     return '/login';
   }
 
+  // 0. Stored invitation acceptance landing URL takes absolute priority
+  if (storedRedirect && storedRedirect.startsWith('/admin/accept-invite')) {
+    return storedRedirect;
+  }
+
   // 1. Super Admin
   if (user.role === 'SUPER_ADMIN') {
     if (storedRedirect && storedRedirect.startsWith('/admin')) {

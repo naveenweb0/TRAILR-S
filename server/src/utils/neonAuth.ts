@@ -173,7 +173,7 @@ export async function verifyNeonAuthToken(token: string): Promise<VerifiedNeonUs
               id: data.user.id,
               email: data.user.email,
               name: data.user.name,
-              emailVerified: data.user.emailVerified,
+              emailVerified: Boolean(data.user.emailVerified ?? true),
             };
           }
         }

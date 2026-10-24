@@ -347,3 +347,10 @@ export interface SuperAdminUserItem {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface SuperAdminManagementResponse {
+  superAdmins: SuperAdminUserItem[];
+  invitations: SuperAdminInvitationItem[];
+  isPlatformOwner: boolean;
+  platformOwnerEmail: string;
+}

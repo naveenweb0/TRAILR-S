@@ -12,6 +12,7 @@ import {
   ArrowRight,
   Loader2,
   LogIn,
+  LogOut,
   Sparkles,
   Lock,
 } from 'lucide-react';
@@ -20,7 +21,7 @@ export const AdminAcceptInvitePage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const navigate = useNavigate();
-  const { user, loginWithGoogle, refreshUser } = useAuth();
+  const { user, loginWithGoogle, refreshUser, logout } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [invitationData, setInvitationData] = useState<any>(null);
@@ -62,9 +63,6 @@ export const AdminAcceptInvitePage: React.FC = () => {
         localStorage.setItem('schooldest_token', res.data.token);
         await refreshUser();
         setAcceptSuccess(true);
-        setTimeout(() => {
-          navigate('/admin', { replace: true });
-        }, 1500);
       }
     } catch (err: any) {
       console.error('Accept invitation error:', err);
@@ -133,21 +131,45 @@ export const AdminAcceptInvitePage: React.FC = () => {
               </Link>
             </div>
           ) : acceptSuccess ? (
-            <div className="text-center space-y-4 py-4">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto shadow-inner animate-bounce">
-                <CheckCircle2 className="w-8 h-8" />
+            <div className="text-center space-y-5 py-3 animate-fadeIn">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
+                <CheckCircle2 className="w-9 h-9 text-emerald-600" />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <h2 className="text-xl font-black text-slate-900 font-display">
-                  Privileges Activated!
+                  Super Admin Privileges Activated!
                 </h2>
-                <p className="text-xs text-slate-500">
-                  Welcome to the platform administration command centre. Redirecting you now...
-                </p>
+                <div className="p-4 bg-purple-50/80 rounded-2xl border border-purple-200 text-xs text-purple-950 text-left space-y-2.5">
+                  <p className="font-bold text-purple-900">
+                    Important Account Activation Step:
+                  </p>
+                  <p className="leading-relaxed">
+                    Your Google account (<strong>{user?.email || invitationData?.email}</strong>) is now an authorized Super Administrator.
+                  </p>
+                  <p className="leading-relaxed bg-white/90 p-3 rounded-xl border border-purple-200/80 font-bold text-purple-900 shadow-xs">
+                    Please sign out and sign back in with your Google account ({user?.email || invitationData?.email}) to refresh your session and access the Super Admin Command Centre.
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center justify-center gap-2 text-xs font-bold text-purple-600">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Loading Command Centre...</span>
+
+              <div className="space-y-2.5 pt-2">
+                <button
+                  onClick={async () => {
+                    await logout();
+                    navigate('/login?notice=super_admin_activated', { replace: true });
+                  }}
+                  className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30 transition-all active:scale-[0.98]"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Sign Out & Re-login with Google</span>
+                </button>
+
+                <button
+                  onClick={() => navigate('/admin', { replace: true })}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors"
+                >
+                  Continue Directly to Admin Dashboard
+                </button>
               </div>
             </div>
           ) : (

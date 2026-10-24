@@ -62,6 +62,10 @@ export const AdminSuperAdminsPage: React.FC = () => {
   // Copy Link State
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
+  // Platform Owner Governance
+  const [isPlatformOwner, setIsPlatformOwner] = useState<boolean>(true);
+  const [platformOwnerEmail, setPlatformOwnerEmail] = useState<string>('naveen.maan2006@gmail.com');
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -70,6 +74,12 @@ export const AdminSuperAdminsPage: React.FC = () => {
       if (res.success && res.data) {
         setSuperAdmins(res.data.superAdmins || []);
         setInvitations(res.data.invitations || []);
+        if (typeof res.data.isPlatformOwner === 'boolean') {
+          setIsPlatformOwner(res.data.isPlatformOwner);
+        }
+        if (res.data.platformOwnerEmail) {
+          setPlatformOwnerEmail(res.data.platformOwnerEmail);
+        }
       }
     } catch (err: any) {
       console.error('Failed to load super administrators:', err);
@@ -212,18 +222,38 @@ export const AdminSuperAdminsPage: React.FC = () => {
               <span className="hidden sm:inline">Refresh</span>
             </button>
 
-            <button
-              onClick={() => {
-                setInviteError(null);
-                setIsInviteModalOpen(true);
-              }}
-              className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-extrabold flex items-center gap-2 shadow-md shadow-purple-600/25 transition-all hover:-translate-y-0.5"
-            >
-              <UserPlus className="w-4 h-4 text-purple-200" />
-              <span>Add Super Admin</span>
-            </button>
+            {isPlatformOwner ? (
+              <button
+                onClick={() => {
+                  setInviteError(null);
+                  setIsInviteModalOpen(true);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-extrabold flex items-center gap-2 shadow-md shadow-purple-600/25 transition-all hover:-translate-y-0.5"
+              >
+                <UserPlus className="w-4 h-4 text-purple-200" />
+                <span>Add Super Admin</span>
+              </button>
+            ) : (
+              <div className="px-4 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-xs font-bold flex items-center gap-2 shadow-xs">
+                <KeyRound className="w-3.5 h-3.5 text-purple-600" />
+                <span>Invites managed by {platformOwnerEmail}</span>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Platform Owner Policy Notice when viewer is secondary admin */}
+        {!isPlatformOwner && (
+          <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs sm:text-sm flex items-start gap-3 shadow-xs animate-fadeIn">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-bold block">Super Administrator Delegated Access</span>
+              <span className="text-amber-800 text-xs leading-relaxed">
+                You have authorized Super Admin access across the command centre. Per governance policy, creating new invitations and revoking administrators is restricted exclusively to primary platform ownership ({platformOwnerEmail}).
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Global Feedback Banner */}
         {successMessage && (
@@ -418,6 +448,7 @@ export const AdminSuperAdminsPage: React.FC = () => {
                     {filteredAdmins.map((admin) => {
                       const isSelf = currentUser?.id === admin.id || currentUser?.email.toLowerCase() === admin.email.toLowerCase();
                       const isSoleAdmin = activeAdminCount <= 1;
+                      const isPlatformOwnerAccount = admin.email.toLowerCase() === platformOwnerEmail.toLowerCase();
 
                       return (
                         <tr key={admin.id} className="hover:bg-slate-50/80 transition-colors">
@@ -427,8 +458,13 @@ export const AdminSuperAdminsPage: React.FC = () => {
                                 {admin.name ? admin.name.charAt(0).toUpperCase() : 'A'}
                               </div>
                               <div>
-                                <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                                <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5 flex-wrap">
                                   <span>{admin.name || 'Platform Administrator'}</span>
+                                  {isPlatformOwnerAccount && (
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800 font-bold border border-amber-200">
+                                      Owner
+                                    </span>
+                                  )}
                                   {isSelf && (
                                     <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-100 text-purple-800 font-bold">
                                       You
@@ -474,13 +510,21 @@ export const AdminSuperAdminsPage: React.FC = () => {
                           </td>
 
                           <td className="py-4 px-4 text-right">
-                            {isSelf ? (
+                            {isPlatformOwnerAccount ? (
+                              <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-200">
+                                Primary Owner
+                              </span>
+                            ) : isSelf ? (
                               <span className="text-[11px] font-semibold text-slate-400 italic">
                                 Protected
                               </span>
                             ) : isSoleAdmin ? (
                               <span className="text-[11px] font-semibold text-slate-400 italic" title="Sole active admin cannot be revoked">
                                 Sole Admin
+                              </span>
+                            ) : !isPlatformOwner ? (
+                              <span className="text-[11px] font-semibold text-slate-400 italic" title="Revoking is restricted to the platform owner">
+                                Owner Only
                               </span>
                             ) : (
                               <button
@@ -619,16 +663,18 @@ export const AdminSuperAdminsPage: React.FC = () => {
                                     )}
                                   </button>
 
-                                  <button
-                                    onClick={() => {
-                                      setCancelError(null);
-                                      setInviteToCancel(inv);
-                                    }}
-                                    className="px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold inline-flex items-center gap-1 transition-colors"
-                                  >
-                                    <XCircle className="w-3.5 h-3.5" />
-                                    <span>Cancel</span>
-                                  </button>
+                                  {isPlatformOwner && (
+                                    <button
+                                      onClick={() => {
+                                        setCancelError(null);
+                                        setInviteToCancel(inv);
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                                    >
+                                      <XCircle className="w-3.5 h-3.5" />
+                                      <span>Cancel</span>
+                                    </button>
+                                  )}
                                 </>
                               )}
 

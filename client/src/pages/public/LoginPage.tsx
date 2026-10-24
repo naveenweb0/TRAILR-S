@@ -48,7 +48,9 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const intent = new URLSearchParams(location.search).get('intent') || new URLSearchParams(location.search).get('portal');
+  const searchParams = new URLSearchParams(location.search);
+  const intent = searchParams.get('intent') || searchParams.get('portal');
+  const notice = searchParams.get('notice');
 
   return (
     <div className="min-h-[calc(100vh-72px)] bg-aurora flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 selection:bg-blue-600 selection:text-white">
@@ -67,6 +69,18 @@ export const LoginPage: React.FC = () => {
             The unified B2B platform connecting educational institutions directly with destinations across India
           </p>
         </div>
+
+        {notice === 'super_admin_activated' && (
+          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-[14px] flex items-start gap-3 shadow-sm animate-fadeIn">
+            <ShieldCheck className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" />
+            <div className="flex-1">
+              <span className="font-bold block text-emerald-900">Super Admin Privileges Activated</span>
+              <span className="text-emerald-800 text-xs">
+                Your Google email has been granted Super Administrator access. Please sign in with Google below to enter the Global Command Centre.
+              </span>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-[14px] flex items-start gap-3 shadow-sm animate-fadeIn">
