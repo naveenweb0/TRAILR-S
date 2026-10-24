@@ -1,6 +1,17 @@
 import { createAuthClient } from '@neondatabase/auth';
 
-const neonAuthUrl = import.meta.env.VITE_NEON_AUTH_URL;
+function sanitizeAuthUrl(rawUrl?: string): string {
+  if (!rawUrl) return '';
+  return rawUrl
+    .trim()
+    .replace(/^["'\\]+|["'\\]+$/g, '')
+    .replace(/\/+$/, '')
+    .replace(/^["'\\]+|["'\\]+$/g, '')
+    .replace(/\/+$/, '');
+}
+
+const rawNeonAuthUrl = import.meta.env.VITE_NEON_AUTH_URL;
+const neonAuthUrl = sanitizeAuthUrl(rawNeonAuthUrl);
 
 export const isNeonAuthConfigured = Boolean(
   neonAuthUrl &&
@@ -41,6 +52,10 @@ export async function signInWithNeonGoogle(options: { callbackURL?: string } = {
 
   if (result?.error) {
     throw new Error(result.error.message || 'Failed to initiate Google OAuth via Neon Auth');
+  }
+
+  if (result?.data?.url && typeof window !== 'undefined' && window.location.href !== result.data.url) {
+    window.location.href = result.data.url;
   }
 }
 

@@ -8,16 +8,28 @@ export interface VerifiedNeonUser {
   emailVerified?: boolean;
 }
 
+export function sanitizeAuthUrl(rawUrl?: string): string {
+  if (!rawUrl) return '';
+  return rawUrl
+    .trim()
+    .replace(/^["'\\]+|["'\\]+$/g, '')
+    .replace(/\/+$/, '')
+    .replace(/^["'\\]+|["'\\]+$/g, '')
+    .replace(/\/+$/, '');
+}
+
 let jwksInstance: ReturnType<typeof createRemoteJWKSet> | null = null;
 
 function getJwks() {
   if (jwksInstance) return jwksInstance;
-  const neonAuthUrl = process.env.NEON_AUTH_URL;
+  const rawAuthUrl = process.env.NEON_AUTH_URL;
+  const neonAuthUrl = sanitizeAuthUrl(rawAuthUrl);
   if (!neonAuthUrl) return null;
 
   try {
+    const rawJwks = process.env.NEON_AUTH_JWKS_URL;
     const jwksUrl = new URL(
-      process.env.NEON_AUTH_JWKS_URL || `${neonAuthUrl.replace(/\/$/, '')}/.well-known/jwks.json`
+      rawJwks ? sanitizeAuthUrl(rawJwks) : `${neonAuthUrl}/.well-known/jwks.json`
     );
     jwksInstance = createRemoteJWKSet(jwksUrl);
     return jwksInstance;
@@ -28,7 +40,8 @@ function getJwks() {
 }
 
 export const isNeonAuthConfigured = (): boolean => {
-  return Boolean(process.env.NEON_AUTH_URL && process.env.NEON_AUTH_URL !== 'https://auth.example.neon.tech');
+  const neonAuthUrl = sanitizeAuthUrl(process.env.NEON_AUTH_URL);
+  return Boolean(neonAuthUrl && neonAuthUrl !== 'https://auth.example.neon.tech');
 };
 
 /**
@@ -135,7 +148,7 @@ export async function verifyNeonAuthToken(token: string): Promise<VerifiedNeonUs
 
   // 3. Fallback: Query Neon Auth Session endpoint (/get-session or /api/auth/get-session)
   try {
-    const cleanUrl = neonAuthUrl.replace(/\/$/, '');
+    const cleanUrl = sanitizeAuthUrl(neonAuthUrl);
     const candidateEndpoints = cleanUrl.endsWith('/auth')
       ? [`${cleanUrl}/get-session`, `${cleanUrl}/api/auth/get-session`]
       : [`${cleanUrl}/api/auth/get-session`, `${cleanUrl}/get-session`];
