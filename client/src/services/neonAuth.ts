@@ -1,12 +1,15 @@
 import { createAuthClient } from '@neondatabase/auth';
 
-function sanitizeAuthUrl(rawUrl?: string): string {
+export function sanitizeAuthUrl(rawUrl?: string): string {
   if (!rawUrl) return '';
   return rawUrl
     .trim()
     .replace(/^["'\\]+|["'\\]+$/g, '')
+    .replace(/(%22|%27)+$/gi, '')
+    .replace(/^(%22|%27)+/gi, '')
     .replace(/\/+$/, '')
     .replace(/^["'\\]+|["'\\]+$/g, '')
+    .replace(/(%22|%27)+$/gi, '')
     .replace(/\/+$/, '');
 }
 
@@ -20,7 +23,19 @@ export const isNeonAuthConfigured = Boolean(
 );
 
 // Resolved URL strictly from environment configuration
-const resolvedAuthUrl = (isNeonAuthConfigured && neonAuthUrl) ? neonAuthUrl : (typeof window !== 'undefined' ? window.location.origin : '');
+export const resolvedAuthUrl = (isNeonAuthConfigured && neonAuthUrl)
+  ? neonAuthUrl
+  : (typeof window !== 'undefined' ? window.location.origin : '');
+
+// Safe development diagnostic: reports sanitized host and pathname without exposing secrets
+if (typeof window !== 'undefined' && (import.meta.env.DEV || import.meta.env.MODE === 'development')) {
+  try {
+    const parsed = new URL(resolvedAuthUrl);
+    console.info(`[NeonAuth] Initialized auth client (host: ${parsed.host}, path: ${parsed.pathname})`);
+  } catch {
+    console.warn('[NeonAuth] Could not parse resolved auth URL for diagnostic logging');
+  }
+}
 
 export const neonAuthClient = createAuthClient(resolvedAuthUrl);
 

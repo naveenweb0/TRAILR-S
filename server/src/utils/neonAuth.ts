@@ -13,8 +13,11 @@ export function sanitizeAuthUrl(rawUrl?: string): string {
   return rawUrl
     .trim()
     .replace(/^["'\\]+|["'\\]+$/g, '')
+    .replace(/(%22|%27)+$/gi, '')
+    .replace(/^(%22|%27)+/gi, '')
     .replace(/\/+$/, '')
     .replace(/^["'\\]+|["'\\]+$/g, '')
+    .replace(/(%22|%27)+$/gi, '')
     .replace(/\/+$/, '');
 }
 

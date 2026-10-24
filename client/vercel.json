@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/api/v1/:path*",
+      "destination": "https://trailr-s.onrender.com/api/v1/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://trailr-s.onrender.com/health"
+    },
+    {
       "source": "/(.*)",
       "destination": "/"
     }
