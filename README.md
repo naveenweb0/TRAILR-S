@@ -43,13 +43,13 @@ The platform replaces fragmented travel agency intermediaries with a unified eco
 ### Client (`client/.env`)
 ```env
 # Public backend API URL
-VITE_API_BASE_URL=http://localhost:5001/api/v1
+VITE_API_BASE_URL="http://localhost:5001/api/v1"
 
 # Neon Auth Service URL (from Neon Console -> Auth)
 VITE_NEON_AUTH_URL="https://[your-neon-auth-subdomain].neon.tech"
 
 # Cloudinary Cloud Name (Browser safe)
-VITE_CLOUDINARY_CLOUD_NAME="fzwn0nve"
+VITE_CLOUDINARY_CLOUD_NAME="your_cloudinary_cloud_name"
 ```
 
 ### Server (`server/.env`)
@@ -57,25 +57,25 @@ VITE_CLOUDINARY_CLOUD_NAME="fzwn0nve"
 PORT=5001
 NODE_ENV=development
 CLIENT_ORIGIN="http://localhost:5173"
-JWT_SECRET="schooldest_super_secure_jwt_secret_key_2026_enterprise_level"
+JWT_SECRET="your_secure_jwt_secret_key"
 
 # Neon PostgreSQL Database
 # Pooled connection string (for high concurrency API traffic):
-DATABASE_URL="postgresql://neondb_owner:npg_BXno24qlFrQm@ep-sparkling-breeze-b438b38k-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require"
+DATABASE_URL="postgresql://[user]:[password]@[neon-hostname]-pooler.[region].neon.tech/neondb?sslmode=require"
 
 # Direct connection string (for Prisma push & migrations):
-DIRECT_URL="postgresql://neondb_owner:npg_BXno24qlFrQm@ep-sparkling-breeze-b438b38k.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require"
+DIRECT_URL="postgresql://[user]:[password]@[neon-hostname].[region].neon.tech/neondb?sslmode=require"
 
 # Neon Auth (Managed Better Auth & Google OAuth)
-NEON_AUTH_URL="https://ep-sparkling-breeze-b438b38k.neonauth.c-6.us-east-2.aws.neon.tech/neondb/auth"
-NEON_AUTH_JWKS_URL="https://ep-sparkling-breeze-b438b38k.neonauth.c-6.us-east-2.aws.neon.tech/neondb/auth/.well-known/jwks.json"
-ALLOW_DEV_AUTH_MOCK="true"
+NEON_AUTH_URL="https://[your-neon-auth-subdomain].neon.tech"
+NEON_AUTH_JWKS_URL="https://[your-neon-auth-subdomain].neon.tech/.well-known/jwks.json"
+ALLOW_DEV_AUTH_MOCK="false"
 
 # Cloudinary CDN & Asset Storage (SERVER ONLY - NEVER EXPOSE TO CLIENT)
-CLOUDINARY_CLOUD_NAME="fzwn0nve"
-CLOUDINARY_API_KEY="134645514522773"
-CLOUDINARY_API_SECRET="80Zb2gKgm5f4y8CRJ1EhzfhVhVg"
-CLOUDINARY_URL="cloudinary://134645514522773:80Zb2gKgm5f4y8CRJ1EhzfhVhVg@fzwn0nve"
+CLOUDINARY_CLOUD_NAME="your_cloudinary_cloud_name"
+CLOUDINARY_API_KEY="your_cloudinary_api_key"
+CLOUDINARY_API_SECRET="your_cloudinary_api_secret"
+CLOUDINARY_URL="cloudinary://[api_key]:[api_secret]@[cloud_name]"
 ```
 
 ---

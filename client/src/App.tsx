@@ -33,6 +33,8 @@ import { AdminSchoolsPage } from './pages/admin/AdminSchoolsPage.js';
 import { AdminBookingsPage } from './pages/admin/AdminBookingsPage.js';
 import { AdminTravellerPage } from './pages/admin/AdminTravellerPage.js';
 import { AdminSettingsAndAuditPage } from './pages/admin/AdminSettingsAndAuditPage.js';
+import { AdminSuperAdminsPage } from './pages/admin/AdminSuperAdminsPage.js';
+import { AdminAcceptInvitePage } from './pages/admin/AdminAcceptInvitePage.js';
 
 export const AppContent: React.FC = () => {
   return (
@@ -48,6 +50,7 @@ export const AppContent: React.FC = () => {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ForgotPasswordPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          <Route path="/admin/accept-invite" element={<AdminAcceptInvitePage />} />
           <Route
             path="/choose-portal"
             element={
@@ -172,6 +175,14 @@ export const AppContent: React.FC = () => {
             element={
               <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
                 <AdminTravellerPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/super-admins"
+            element={
+              <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                <AdminSuperAdminsPage />
               </ProtectedRoute>
             }
           />

@@ -149,6 +149,19 @@ export const api = {
   updatePlatformSetting: (key: string, value: any) =>
     request('/admin/settings', { method: 'PUT', body: JSON.stringify({ key, value }) }),
 
+  // Super Admin Management
+  getSuperAdmins: () => request('/admin/super-admins'),
+  inviteSuperAdmin: (data: { email: string; notes?: string }) =>
+    request('/admin/super-admins/invite', { method: 'POST', body: JSON.stringify(data) }),
+  cancelSuperAdminInvitation: (id: string) =>
+    request(`/admin/super-admins/invitations/${id}/cancel`, { method: 'POST' }),
+  revokeSuperAdmin: (userId: string) =>
+    request(`/admin/super-admins/revoke/${userId}`, { method: 'POST' }),
+  validateSuperAdminInvitation: (token: string) =>
+    request(`/auth/super-admin-invitation/validate/${token}`),
+  acceptSuperAdminInvitation: (token: string) =>
+    request('/auth/super-admin-invitation/accept', { method: 'POST', body: JSON.stringify({ token }) }),
+
   // Notifications
   getNotifications: () => request('/notifications'),
   markNotificationRead: (id: string) => request(`/notifications/${id}/read`, { method: 'PUT' }),

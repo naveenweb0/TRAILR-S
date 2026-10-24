@@ -21,6 +21,13 @@ enum PortalType {
   DESTINATION
 }
 
+enum SuperAdminInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
 enum VerificationStatus {
   PENDING
   VERIFIED
@@ -107,6 +114,27 @@ model User {
   auditLogs       AuditLog[]
   notifications   Notification[]
   assignedTravellerRequests TravellerServiceRequest[] @relation("AssignedAdmin")
+  sentAdminInvitations     SuperAdminInvitation[] @relation("SentAdminInvitations")
+  acceptedAdminInvitations SuperAdminInvitation[] @relation("AcceptedAdminInvitations")
+}
+
+model SuperAdminInvitation {
+  id           String                     @id @default(uuid())
+  email        String
+  token        String                     @unique
+  status       SuperAdminInvitationStatus @default(PENDING)
+  notes        String?
+  expiresAt    DateTime
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+  invitedById  String
+  acceptedById String?
+
+  invitedBy    User                       @relation("SentAdminInvitations", fields: [invitedById], references: [id])
+  acceptedBy   User?                      @relation("AcceptedAdminInvitations", fields: [acceptedById], references: [id])
+
+  @@index([email])
+  @@index([status])
 }
 
 model School {

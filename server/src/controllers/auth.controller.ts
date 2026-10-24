@@ -4,7 +4,7 @@ import { prisma } from '../prisma.js';
 import { generateToken, generatePasswordResetToken, verifyPasswordResetToken } from '../utils/jwt.js';
 import { AppError } from '../utils/errors.js';
 import { AuthRequest, logAudit } from '../middleware/auth.js';
-import { Role, VerificationStatus, DestinationStatus, PortalType, Prisma } from '@prisma/client';
+import { Role, VerificationStatus, DestinationStatus, PortalType, Prisma, SuperAdminInvitationStatus } from '@prisma/client';
 import { verifyFirebaseToken } from '../utils/firebase.js';
 import { verifyNeonAuthToken } from '../utils/neonAuth.js';
 
@@ -29,6 +29,16 @@ async function resolveOrCreateNeonUser(verified: {
     throw new AppError('Verified email is missing from authentication credentials.', 400);
   }
 
+  // Check if an active PENDING Super Admin invitation exists for this verified email
+  const pendingInvitation = await prisma.superAdminInvitation.findFirst({
+    where: {
+      email: { equals: normalizedEmail, mode: 'insensitive' },
+      status: SuperAdminInvitationStatus.PENDING,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
   // 1. Primary lookup strictly by verified Neon Auth ID
   let user = await prisma.user.findUnique({
     where: { neonAuthId: verified.id },
@@ -38,6 +48,37 @@ async function resolveOrCreateNeonUser(verified: {
   if (user) {
     if (!user.isActive) {
       throw new AppError('Account has been suspended. Please contact platform administration.', 403);
+    }
+
+    // If an active pending invitation exists for this verified identity, promote to SUPER_ADMIN atomically
+    if (pendingInvitation && verified.emailVerified !== false) {
+      await prisma.$transaction(async (tx) => {
+        const claimed = await tx.superAdminInvitation.updateMany({
+          where: {
+            id: pendingInvitation.id,
+            status: SuperAdminInvitationStatus.PENDING,
+            expiresAt: { gt: new Date() },
+          },
+          data: {
+            status: SuperAdminInvitationStatus.ACCEPTED,
+            acceptedById: user!.id,
+          },
+        });
+        if (claimed.count > 0) {
+          user = await tx.user.update({
+            where: { id: user!.id },
+            data: {
+              role: Role.SUPER_ADMIN,
+              lastLoginAt: new Date(),
+              name: verified.name && (!user!.name || user!.name === 'Neon User' || user!.name === 'Google User') ? verified.name : user!.name,
+            },
+            include: userStaffInclude,
+          });
+          await logAudit(user!.id, 'SUPER_ADMIN_INVITATION_ACCEPTED', 'SuperAdminInvitation', pendingInvitation.id, `Super Admin invitation accepted via Google sign-in by ${normalizedEmail}`);
+          await logAudit(user!.id, 'SUPER_ADMIN_PRIVILEGE_GRANTED', 'User', user!.id, `Super Admin role granted to ${normalizedEmail}`);
+        }
+      });
+      return user!;
     }
 
     // Security Check: If Super Admin, enforce email matching with authorized record
@@ -65,8 +106,42 @@ async function resolveOrCreateNeonUser(verified: {
   });
 
   if (existingByEmail) {
-    // SECURITY INVARIANT 1: SUPER_ADMIN MUST NEVER be linked implicitly via email match.
-    // Super Admin access requires the platform owner to explicitly provision the verified Neon Auth ID in Neon PostgreSQL.
+    // If pending invitation exists and email is verified by identity provider:
+    if (pendingInvitation && verified.emailVerified !== false) {
+      let acceptedUser: any;
+      await prisma.$transaction(async (tx) => {
+        const claimed = await tx.superAdminInvitation.updateMany({
+          where: {
+            id: pendingInvitation.id,
+            status: SuperAdminInvitationStatus.PENDING,
+            expiresAt: { gt: new Date() },
+          },
+          data: {
+            status: SuperAdminInvitationStatus.ACCEPTED,
+            acceptedById: existingByEmail.id,
+          },
+        });
+        if (claimed.count > 0) {
+          acceptedUser = await tx.user.update({
+            where: { id: existingByEmail.id },
+            data: {
+              role: Role.SUPER_ADMIN,
+              neonAuthId: verified.id,
+              email: normalizedEmail,
+              emailVerified: true,
+              lastLoginAt: new Date(),
+              name: existingByEmail.name || verified.name,
+            },
+            include: userStaffInclude,
+          });
+          await logAudit(existingByEmail.id, 'SUPER_ADMIN_INVITATION_ACCEPTED', 'SuperAdminInvitation', pendingInvitation.id, `Super Admin invitation accepted via Google sign-in by ${normalizedEmail}`);
+          await logAudit(existingByEmail.id, 'SUPER_ADMIN_PRIVILEGE_GRANTED', 'User', existingByEmail.id, `Super Admin role granted to ${normalizedEmail}`);
+        }
+      });
+      if (acceptedUser) return acceptedUser;
+    }
+
+    // SECURITY INVARIANT 1: SUPER_ADMIN MUST NEVER be linked implicitly via email match without a valid invitation.
     if (existingByEmail.role === Role.SUPER_ADMIN) {
       throw new AppError(
         'Super Administrator accounts cannot be linked automatically via email. The platform owner must explicitly provision the verified Neon Auth ID in Neon PostgreSQL.',
@@ -105,7 +180,43 @@ async function resolveOrCreateNeonUser(verified: {
     });
   }
 
-  // 3. Brand new user: strictly default to SCHOOL_STAFF, NEVER SUPER_ADMIN
+  // 3. Brand new user:
+  // If an active pending Super Admin invitation exists and email is verified:
+  if (pendingInvitation && verified.emailVerified !== false) {
+    let newAdmin: any;
+    await prisma.$transaction(async (tx) => {
+      newAdmin = await tx.user.create({
+        data: {
+          email: normalizedEmail,
+          neonAuthId: verified.id,
+          name: verified.name || 'Super Admin',
+          role: Role.SUPER_ADMIN,
+          isActive: true,
+          emailVerified: true,
+          lastLoginAt: new Date(),
+        },
+        include: userStaffInclude,
+      });
+
+      await tx.superAdminInvitation.updateMany({
+        where: {
+          id: pendingInvitation.id,
+          status: SuperAdminInvitationStatus.PENDING,
+          expiresAt: { gt: new Date() },
+        },
+        data: {
+          status: SuperAdminInvitationStatus.ACCEPTED,
+          acceptedById: newAdmin.id,
+        },
+      });
+
+      await logAudit(newAdmin.id, 'SUPER_ADMIN_INVITATION_ACCEPTED', 'SuperAdminInvitation', pendingInvitation.id, `Super Admin invitation accepted via Google sign-in by ${normalizedEmail}`);
+      await logAudit(newAdmin.id, 'SUPER_ADMIN_PRIVILEGE_GRANTED', 'User', newAdmin.id, `Super Admin role granted to brand new user ${normalizedEmail}`);
+    });
+    if (newAdmin) return newAdmin;
+  }
+
+  // Otherwise strictly default to SCHOOL_STAFF, NEVER SUPER_ADMIN
   try {
     return await prisma.user.create({
       data: {
@@ -201,6 +312,16 @@ async function resolveOrCreateFirebaseUser(verified: {
     throw new AppError('Verified email is required from authentication provider.', 400);
   }
 
+  // Check if an active PENDING Super Admin invitation exists for this verified email
+  const pendingInvitation = await prisma.superAdminInvitation.findFirst({
+    where: {
+      email: { equals: normalizedEmail, mode: 'insensitive' },
+      status: SuperAdminInvitationStatus.PENDING,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
   // 1. Primary lookup strictly by verified Firebase UID
   let user = await prisma.user.findUnique({
     where: { firebaseUid: verified.uid },
@@ -210,6 +331,36 @@ async function resolveOrCreateFirebaseUser(verified: {
   if (user) {
     if (!user.isActive) {
       throw new AppError('Account has been suspended. Please contact platform administration.', 403);
+    }
+
+    if (pendingInvitation && verified.emailVerified) {
+      await prisma.$transaction(async (tx) => {
+        const claimed = await tx.superAdminInvitation.updateMany({
+          where: {
+            id: pendingInvitation.id,
+            status: SuperAdminInvitationStatus.PENDING,
+            expiresAt: { gt: new Date() },
+          },
+          data: {
+            status: SuperAdminInvitationStatus.ACCEPTED,
+            acceptedById: user!.id,
+          },
+        });
+        if (claimed.count > 0) {
+          user = await tx.user.update({
+            where: { id: user!.id },
+            data: {
+              role: Role.SUPER_ADMIN,
+              lastLoginAt: new Date(),
+              name: verified.name && (!user!.name || user!.name === 'Google User') ? verified.name : user!.name,
+            },
+            include: userStaffInclude,
+          });
+          await logAudit(user!.id, 'SUPER_ADMIN_INVITATION_ACCEPTED', 'SuperAdminInvitation', pendingInvitation.id, `Super Admin invitation accepted via Firebase Google sign-in by ${normalizedEmail}`);
+          await logAudit(user!.id, 'SUPER_ADMIN_PRIVILEGE_GRANTED', 'User', user!.id, `Super Admin role granted to ${normalizedEmail}`);
+        }
+      });
+      return user!;
     }
 
     if (user.role === Role.SUPER_ADMIN && user.email.toLowerCase().trim() !== normalizedEmail) {
@@ -235,6 +386,40 @@ async function resolveOrCreateFirebaseUser(verified: {
   });
 
   if (existingByEmail) {
+    if (pendingInvitation && verified.emailVerified) {
+      let acceptedUser: any;
+      await prisma.$transaction(async (tx) => {
+        const claimed = await tx.superAdminInvitation.updateMany({
+          where: {
+            id: pendingInvitation.id,
+            status: SuperAdminInvitationStatus.PENDING,
+            expiresAt: { gt: new Date() },
+          },
+          data: {
+            status: SuperAdminInvitationStatus.ACCEPTED,
+            acceptedById: existingByEmail.id,
+          },
+        });
+        if (claimed.count > 0) {
+          acceptedUser = await tx.user.update({
+            where: { id: existingByEmail.id },
+            data: {
+              role: Role.SUPER_ADMIN,
+              firebaseUid: verified.uid,
+              email: normalizedEmail,
+              emailVerified: true,
+              lastLoginAt: new Date(),
+              name: existingByEmail.name || verified.name,
+            },
+            include: userStaffInclude,
+          });
+          await logAudit(existingByEmail.id, 'SUPER_ADMIN_INVITATION_ACCEPTED', 'SuperAdminInvitation', pendingInvitation.id, `Super Admin invitation accepted via Firebase Google sign-in by ${normalizedEmail}`);
+          await logAudit(existingByEmail.id, 'SUPER_ADMIN_PRIVILEGE_GRANTED', 'User', existingByEmail.id, `Super Admin role granted to ${normalizedEmail}`);
+        }
+      });
+      if (acceptedUser) return acceptedUser;
+    }
+
     if (existingByEmail.role === Role.SUPER_ADMIN) {
       throw new AppError(
         'Super Administrator accounts cannot be linked automatically via email. The platform owner must explicitly provision the verified Firebase UID in Neon PostgreSQL.',
@@ -270,6 +455,40 @@ async function resolveOrCreateFirebaseUser(verified: {
   }
 
   // 3. Brand new user
+  if (pendingInvitation && verified.emailVerified) {
+    let newAdmin: any;
+    await prisma.$transaction(async (tx) => {
+      newAdmin = await tx.user.create({
+        data: {
+          email: normalizedEmail,
+          firebaseUid: verified.uid,
+          name: verified.name || 'Super Admin',
+          role: Role.SUPER_ADMIN,
+          isActive: true,
+          emailVerified: true,
+          lastLoginAt: new Date(),
+        },
+        include: userStaffInclude,
+      });
+
+      await tx.superAdminInvitation.updateMany({
+        where: {
+          id: pendingInvitation.id,
+          status: SuperAdminInvitationStatus.PENDING,
+          expiresAt: { gt: new Date() },
+        },
+        data: {
+          status: SuperAdminInvitationStatus.ACCEPTED,
+          acceptedById: newAdmin.id,
+        },
+      });
+
+      await logAudit(newAdmin.id, 'SUPER_ADMIN_INVITATION_ACCEPTED', 'SuperAdminInvitation', pendingInvitation.id, `Super Admin invitation accepted via Firebase Google sign-in by ${normalizedEmail}`);
+      await logAudit(newAdmin.id, 'SUPER_ADMIN_PRIVILEGE_GRANTED', 'User', newAdmin.id, `Super Admin role granted to brand new user ${normalizedEmail}`);
+    });
+    if (newAdmin) return newAdmin;
+  }
+
   try {
     return await prisma.user.create({
       data: {
@@ -818,5 +1037,205 @@ export async function resetPassword(req: Request, res: Response, next: NextFunct
     });
   } catch (error) {
     next(error);
+  }
+}
+
+/**
+ * Validate a Super Admin invitation token.
+ * GET /api/v1/auth/super-admin-invitation/validate/:token
+ */
+export async function validateSuperAdminInvitation(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = req.params.token as string;
+    if (!token) {
+      throw new AppError('Invitation token is required.', 400);
+    }
+
+    const invitation = await prisma.superAdminInvitation.findUnique({
+      where: { token },
+      include: {
+        invitedBy: { select: { name: true, email: true } },
+      },
+    });
+
+    if (!invitation) {
+      throw new AppError('Invitation not found or invalid token.', 404);
+    }
+
+    if (invitation.status === SuperAdminInvitationStatus.PENDING && invitation.expiresAt < new Date()) {
+      await prisma.superAdminInvitation.update({
+        where: { id: invitation.id },
+        data: { status: SuperAdminInvitationStatus.EXPIRED },
+      });
+      invitation.status = SuperAdminInvitationStatus.EXPIRED;
+    }
+
+    const isPending = invitation.status === SuperAdminInvitationStatus.PENDING;
+
+    res.json({
+      success: true,
+      data: {
+        isValid: isPending,
+        status: invitation.status,
+        email: invitation.email,
+        notes: invitation.notes,
+        expiresAt: invitation.expiresAt,
+        invitedBy: invitation.invitedBy?.name || invitation.invitedBy?.email || 'Platform Owner',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Explicitly accept a Super Admin invitation using the current authenticated session.
+ * POST /api/v1/auth/super-admin-invitation/accept
+ */
+export async function acceptSuperAdminInvitation(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== 'string') {
+      throw new AppError('Invitation token is required.', 400);
+    }
+
+    if (!req.user || !req.user.userId || !req.user.email) {
+      throw new AppError('Authentication required to accept an administrator invitation.', 401);
+    }
+
+    const normalizedUserEmail = req.user.email.toLowerCase().trim();
+
+    const invitation = await prisma.superAdminInvitation.findUnique({
+      where: { token },
+    });
+
+    if (!invitation) {
+      await logAudit(
+        req.user.userId,
+        'SUPER_ADMIN_INVITATION_FAILED',
+        'SuperAdminInvitation',
+        undefined,
+        `Acceptance failed: Token not found by user ${normalizedUserEmail}`,
+        req.ip
+      );
+      throw new AppError('Invitation not found or invalid token.', 404);
+    }
+
+    if (invitation.status !== SuperAdminInvitationStatus.PENDING || invitation.expiresAt <= new Date()) {
+      if (invitation.status === SuperAdminInvitationStatus.PENDING) {
+        await prisma.superAdminInvitation.update({
+          where: { id: invitation.id },
+          data: { status: SuperAdminInvitationStatus.EXPIRED },
+        });
+      }
+      await logAudit(
+        req.user.userId,
+        'SUPER_ADMIN_INVITATION_FAILED',
+        'SuperAdminInvitation',
+        invitation.id,
+        `Acceptance failed: Invitation status is ${invitation.status} (Expired: ${invitation.expiresAt <= new Date()}) by ${normalizedUserEmail}`,
+        req.ip
+      );
+      throw new AppError('This invitation is no longer active, valid, or has expired.', 400);
+    }
+
+    // Security Invariant: The authenticated email MUST match the invited email
+    if (invitation.email.toLowerCase().trim() !== normalizedUserEmail) {
+      await logAudit(
+        req.user.userId,
+        'SUPER_ADMIN_INVITATION_FAILED',
+        'SuperAdminInvitation',
+        invitation.id,
+        `Acceptance rejected: Authenticated email (${normalizedUserEmail}) does not match invited email (${invitation.email})`,
+        req.ip
+      );
+      throw new AppError('Access forbidden. Authenticated Google account does not match the invited email address.', 403);
+    }
+
+    // Atomic transaction for concurrency safety
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Atomically claim invitation
+      const claimResult = await tx.superAdminInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          status: SuperAdminInvitationStatus.PENDING,
+          expiresAt: { gt: new Date() },
+        },
+        data: {
+          status: SuperAdminInvitationStatus.ACCEPTED,
+          acceptedById: req.user!.userId,
+        },
+      });
+
+      if (claimResult.count === 0) {
+        throw new AppError('Invitation was already claimed or cancelled concurrently.', 409);
+      }
+
+      // 2. Grant Super Admin role to user
+      const updatedUser = await tx.user.update({
+        where: { id: req.user!.userId },
+        data: {
+          role: Role.SUPER_ADMIN,
+          isActive: true,
+          emailVerified: true,
+          lastLoginAt: new Date(),
+        },
+        include: userStaffInclude,
+      });
+
+      return updatedUser;
+    });
+
+    await logAudit(
+      req.user.userId,
+      'SUPER_ADMIN_INVITATION_ACCEPTED',
+      'SuperAdminInvitation',
+      invitation.id,
+      `Super Admin invitation accepted by ${normalizedUserEmail} (ID: ${req.user.userId})`,
+      req.ip
+    );
+
+    await logAudit(
+      req.user.userId,
+      'SUPER_ADMIN_PRIVILEGE_GRANTED',
+      'User',
+      req.user.userId,
+      `Super Admin privileges granted to ${normalizedUserEmail} via accepted invitation ${invitation.id}`,
+      req.ip
+    );
+
+    const schoolStaff = result.schoolStaff[0];
+    const destinationStaff = result.destinationStaff[0];
+
+    // Issue fresh JWT token reflecting the new SUPER_ADMIN role
+    const newToken = generateToken({
+      userId: result.id,
+      email: result.email,
+      role: result.role,
+      name: result.name,
+      schoolId: schoolStaff?.schoolId,
+      destinationId: destinationStaff?.destinationId,
+    });
+
+    res.json({
+      success: true,
+      message: 'Super Administrator privileges successfully granted.',
+      data: {
+        token: newToken,
+        user: {
+          id: result.id,
+          email: result.email,
+          name: result.name,
+          role: result.role,
+          portalType: result.portalType,
+          phone: result.phone,
+          neonAuthId: result.neonAuthId,
+          school: schoolStaff ? schoolStaff.school : null,
+          destination: destinationStaff ? destinationStaff.destination : null,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
   }
 }

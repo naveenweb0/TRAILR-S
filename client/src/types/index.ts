@@ -307,3 +307,43 @@ export interface AuditLogItem {
     role: Role;
   };
 }
+
+export type SuperAdminInvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED' | 'CANCELLED';
+
+export interface SuperAdminInvitationItem {
+  id: string;
+  email: string;
+  token: string;
+  status: SuperAdminInvitationStatus;
+  notes?: string | null;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+  invitedById: string;
+  acceptedById?: string | null;
+  invitedBy?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  acceptedBy?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+}
+
+export interface SuperAdminUserItem {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string | null;
+  role: Role;
+  isActive: boolean;
+  emailVerified: boolean;
+  neonAuthId?: string | null;
+  firebaseUid?: string | null;
+  lastLoginAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

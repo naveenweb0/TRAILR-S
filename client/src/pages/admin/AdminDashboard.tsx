@@ -88,7 +88,15 @@ export const AdminDashboard: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              to="/admin/super-admins"
+              className="px-5 py-3 rounded-xl bg-purple-900/60 hover:bg-purple-800 text-white font-bold text-[15px] border border-purple-500/30 flex items-center gap-2 transition-all active:scale-[0.98]"
+            >
+              <Shield className="w-5 h-5 text-purple-300" />
+              <span>Super Admin Management</span>
+            </Link>
+
             <Link
               to="/admin/traveller-requests"
               className="px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-slate-900 text-white font-bold text-[15px] shadow-lg shadow-purple-600/30 flex items-center gap-2 transition-all active:scale-[0.98]"
@@ -283,6 +291,17 @@ export const AdminDashboard: React.FC = () => {
               <h3 className="font-bold text-blue-950 text-[17px]">Institute Management</h3>
               <p className="text-[14px] text-blue-800/80 leading-relaxed">
                 Review institute registrations, verify affiliations (CBSE/ICSE), and manage staff.
+              </p>
+            </Link>
+
+            <Link
+              to="/admin/super-admins"
+              className="p-6 bg-purple-50/70 hover:bg-purple-50 border border-purple-200 rounded-3xl transition-all shadow-sm hover:shadow-lg hover:-translate-y-1 group space-y-2"
+            >
+              <Shield className="w-7 h-7 text-purple-600 mb-2 group-hover:scale-110 transition-transform" />
+              <h3 className="font-bold text-purple-950 text-[17px]">Super Admin Management</h3>
+              <p className="text-[14px] text-purple-800/80 leading-relaxed">
+                Add and govern platform administrators with verified Google identities and audit logs.
               </p>
             </Link>
 

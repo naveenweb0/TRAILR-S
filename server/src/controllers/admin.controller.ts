@@ -2,8 +2,9 @@ import { Response, NextFunction } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/errors.js';
 import { AuthRequest, logAudit } from '../middleware/auth.js';
-import { AvailabilityStatus, BookingStatus, DestinationStatus, Role, TravellerStatus, VerificationStatus } from '@prisma/client';
+import { AvailabilityStatus, BookingStatus, DestinationStatus, Role, SuperAdminInvitationStatus, TravellerStatus, VerificationStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 export async function getAdminOverview(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -819,6 +820,261 @@ export async function updateUserStatus(req: AuthRequest, res: Response, next: Ne
     );
 
     res.json({ success: true, data: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * List all active Super Administrators and pending/historical invitations.
+ * GET /api/v1/admin/super-admins
+ */
+export async function listSuperAdminsAndInvitations(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    // Automatically transition expired pending invitations
+    await prisma.superAdminInvitation.updateMany({
+      where: {
+        status: SuperAdminInvitationStatus.PENDING,
+        expiresAt: { lte: new Date() },
+      },
+      data: {
+        status: SuperAdminInvitationStatus.EXPIRED,
+      },
+    });
+
+    const [superAdmins, invitations] = await Promise.all([
+      prisma.user.findMany({
+        where: { role: Role.SUPER_ADMIN },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          role: true,
+          isActive: true,
+          emailVerified: true,
+          neonAuthId: true,
+          firebaseUid: true,
+          lastLoginAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      prisma.superAdminInvitation.findMany({
+        include: {
+          invitedBy: {
+            select: { id: true, name: true, email: true },
+          },
+          acceptedBy: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        superAdmins,
+        invitations,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Invite a person via their Google email to become a Super Administrator.
+ * POST /api/v1/admin/super-admins/invite
+ */
+export async function inviteSuperAdmin(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { email, notes } = req.body;
+    if (!email || typeof email !== 'string') {
+      throw new AppError('A valid Google email address is required.', 400);
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      throw new AppError('Invalid email format.', 400);
+    }
+
+    // Check if an active Super Admin already exists with this email
+    const existingSuperAdmin = await prisma.user.findFirst({
+      where: {
+        email: { equals: normalizedEmail, mode: 'insensitive' },
+        role: Role.SUPER_ADMIN,
+        isActive: true,
+      },
+    });
+    if (existingSuperAdmin) {
+      throw new AppError('An active Super Administrator with this email address already exists.', 409);
+    }
+
+    // Check if an active PENDING invitation already exists
+    const existingInvitation = await prisma.superAdminInvitation.findFirst({
+      where: {
+        email: { equals: normalizedEmail, mode: 'insensitive' },
+        status: SuperAdminInvitationStatus.PENDING,
+        expiresAt: { gt: new Date() },
+      },
+    });
+    if (existingInvitation) {
+      throw new AppError('An active pending Super Admin invitation already exists for this email address.', 409);
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    const invitation = await prisma.superAdminInvitation.create({
+      data: {
+        email: normalizedEmail,
+        token,
+        status: SuperAdminInvitationStatus.PENDING,
+        notes: notes ? String(notes).trim() : null,
+        expiresAt,
+        invitedById: req.user!.userId,
+      },
+      include: {
+        invitedBy: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
+
+    await logAudit(
+      req.user!.userId,
+      'SUPER_ADMIN_INVITATION_CREATED',
+      'SuperAdminInvitation',
+      invitation.id,
+      `Super Admin invitation created for ${normalizedEmail} (Expires: ${expiresAt.toISOString()}) by admin ${req.user!.email}`,
+      req.ip
+    );
+
+    res.status(201).json({
+      success: true,
+      message: `Super Admin invitation created for ${normalizedEmail}.`,
+      data: {
+        ...invitation,
+        inviteUrl: `/admin/accept-invite?token=${token}`,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Cancel a pending Super Admin invitation.
+ * POST /api/v1/admin/super-admins/invitations/:id/cancel
+ */
+export async function cancelSuperAdminInvitation(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id as string;
+    const invitation = await prisma.superAdminInvitation.findUnique({
+      where: { id },
+    });
+
+    if (!invitation) {
+      throw new AppError('Super Admin invitation not found.', 404);
+    }
+
+    if (invitation.status !== SuperAdminInvitationStatus.PENDING) {
+      throw new AppError(`Cannot cancel invitation with status ${invitation.status}.`, 400);
+    }
+
+    const updated = await prisma.superAdminInvitation.update({
+      where: { id },
+      data: { status: SuperAdminInvitationStatus.CANCELLED },
+      include: {
+        invitedBy: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    await logAudit(
+      req.user!.userId,
+      'SUPER_ADMIN_INVITATION_CANCELLED',
+      'SuperAdminInvitation',
+      invitation.id,
+      `Super Admin invitation for ${invitation.email} was cancelled by admin ${req.user!.email}`,
+      req.ip
+    );
+
+    res.json({
+      success: true,
+      message: `Super Admin invitation for ${invitation.email} has been cancelled.`,
+      data: updated,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Revoke Super Admin privileges from a user without destroying their account or data.
+ * POST /api/v1/admin/super-admins/revoke/:id
+ */
+export async function revokeSuperAdminAccess(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const targetUserId = req.params.id as string;
+
+    if (req.user!.userId === targetUserId) {
+      throw new AppError('Self-revocation is strictly prohibited to prevent accidental administrator lockout.', 400);
+    }
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+
+    if (!targetUser) {
+      throw new AppError('Target administrator not found.', 404);
+    }
+
+    if (targetUser.role !== Role.SUPER_ADMIN) {
+      throw new AppError('Target user does not have Super Administrator privileges.', 400);
+    }
+
+    // Safety constraint: Prevent revoking the last remaining active Super Admin
+    const activeAdminCount = await prisma.user.count({
+      where: { role: Role.SUPER_ADMIN, isActive: true },
+    });
+
+    if (activeAdminCount <= 1) {
+      throw new AppError('Cannot revoke the sole remaining active Super Administrator on the platform.', 400);
+    }
+
+    // Safely demote role to SCHOOL_STAFF, preserving user account, organizations, bookings, and audit history
+    const updated = await prisma.user.update({
+      where: { id: targetUserId },
+      data: { role: Role.SCHOOL_STAFF },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        updatedAt: true,
+      },
+    });
+
+    await logAudit(
+      req.user!.userId,
+      'SUPER_ADMIN_PRIVILEGE_REVOKED',
+      'User',
+      targetUserId,
+      `Super Admin privileges revoked from ${targetUser.email} (${targetUserId}) by admin ${req.user!.email}`,
+      req.ip
+    );
+
+    res.json({
+      success: true,
+      message: `Super Admin privileges successfully revoked from ${targetUser.email}.`,
+      data: updated,
+    });
   } catch (err) {
     next(err);
   }

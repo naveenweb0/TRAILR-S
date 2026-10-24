@@ -7,6 +7,7 @@ import {
   School,
   Landmark,
   Shield,
+  ShieldCheck,
   Bell,
   LogOut,
   LogIn,
@@ -149,17 +150,31 @@ export const Navbar: React.FC = () => {
 
               {/* Authenticated Portal Links strictly segregated by server-verified role */}
               {user && user.role === 'SUPER_ADMIN' && (
-                <Link
-                  to="/admin"
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
-                    isActive('/admin')
-                      ? 'bg-purple-100/80 text-purple-800 font-bold'
-                      : 'text-slate-700 hover:text-purple-700 hover:bg-slate-100/70'
-                  }`}
-                >
-                  <Shield className="w-4 h-4 text-purple-600" />
-                  <span>Admin Portal</span>
-                </Link>
+                <>
+                  <Link
+                    to="/admin"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+                      isActive('/admin') && location.pathname === '/admin'
+                        ? 'bg-purple-100/80 text-purple-800 font-bold'
+                        : 'text-slate-700 hover:text-purple-700 hover:bg-slate-100/70'
+                    }`}
+                  >
+                    <Shield className="w-4 h-4 text-purple-600" />
+                    <span>Admin Portal</span>
+                  </Link>
+
+                  <Link
+                    to="/admin/super-admins"
+                    className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+                      isActive('/admin/super-admins')
+                        ? 'bg-purple-100/80 text-purple-800 font-bold'
+                        : 'text-slate-700 hover:text-purple-700 hover:bg-slate-100/70'
+                    }`}
+                  >
+                    <ShieldCheck className="w-4 h-4 text-purple-600" />
+                    <span>Super Admins</span>
+                  </Link>
+                </>
               )}
 
               {user && !user.portalType && !user.school && !user.destination && user.role !== 'SUPER_ADMIN' && (
@@ -414,15 +429,27 @@ export const Navbar: React.FC = () => {
             )}
 
             {user?.role === 'SUPER_ADMIN' && (
-              <Link
-                to="/admin"
-                onClick={() => setMobileMenuOpen(false)}
-                className={`block px-4 py-3 rounded-xl font-semibold transition-colors ${
-                  isActive('/admin') ? 'bg-purple-100 text-purple-800 font-bold' : 'text-purple-700 hover:bg-purple-50'
-                }`}
-              >
-                Admin Portal
-              </Link>
+              <>
+                <Link
+                  to="/admin"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block px-4 py-3 rounded-xl font-semibold transition-colors ${
+                    isActive('/admin') ? 'bg-purple-100 text-purple-800 font-bold' : 'text-purple-700 hover:bg-purple-50'
+                  }`}
+                >
+                  Admin Portal
+                </Link>
+
+                <Link
+                  to="/admin/super-admins"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block px-4 py-3 rounded-xl font-semibold transition-colors ${
+                    isActive('/admin/super-admins') ? 'bg-purple-100 text-purple-800 font-bold' : 'text-purple-700 hover:bg-purple-50'
+                  }`}
+                >
+                  Super Admin Management
+                </Link>
+              </>
             )}
 
             {user && (

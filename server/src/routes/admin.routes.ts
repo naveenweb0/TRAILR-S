@@ -18,6 +18,10 @@ import {
   getAuditLogs,
   getPlatformSettings,
   updatePlatformSetting,
+  listSuperAdminsAndInvitations,
+  inviteSuperAdmin,
+  cancelSuperAdminInvitation,
+  revokeSuperAdminAccess,
 } from '../controllers/admin.controller.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 
@@ -27,6 +31,12 @@ router.use(authenticate);
 router.use(requireRole(['SUPER_ADMIN']));
 
 router.get('/overview', getAdminOverview);
+
+// Super Admin Management
+router.get('/super-admins', listSuperAdminsAndInvitations);
+router.post('/super-admins/invite', inviteSuperAdmin);
+router.post('/super-admins/invitations/:id/cancel', cancelSuperAdminInvitation);
+router.post('/super-admins/revoke/:id', revokeSuperAdminAccess);
 
 // Destination management
 router.get('/destinations', listAllDestinations);
